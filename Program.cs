@@ -88,8 +88,6 @@ namespace Recorder
                         {
                             FileName = ffmpegPath,
                             Arguments = arguments,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
                             UseShellExecute = false,
                             CreateNoWindow = true
                         };
