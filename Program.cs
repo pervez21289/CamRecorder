@@ -1,19 +1,15 @@
-﻿using System;
+﻿
+using System;
+using System.Configuration;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.ServiceProcess;
 using System.Threading;
 
 namespace Recorder
 {
-    using Recorder.RTSPRecorderService;
-    using System;
-    using System.Diagnostics;
-    using System.IO;
-    using System.Linq;
-    using System.Net.NetworkInformation;
-    using System.ServiceProcess;
-    using System.Threading;
+
 
     namespace RTSPRecorderService
     {
@@ -24,9 +20,9 @@ namespace Recorder
             private const string ffmpegPath = @"C:\ffmpeg\bin\ffmpeg.exe"; // Update the path if needed
             //private const string rtspUrl = "rtsp://admin:oWOSAN@192.168.1.10:554/stream1"; // Replace with actual RTSP URL
             //private const string rtspUrl = "rtsp://192.168.1.10:4747/video"; // Replace with actual RTSP URL
-            private const string rtspUrl = "rtsp://192.168.1.10:8080/h264_pcm.sdp"; // Replace with actual RTSP URL
-            private const string outputDirectory = @"C:\Recordings\";
-
+            private  string rtspUrl = ConfigurationManager.AppSettings["rtspUrl"]; // Replace with actual RTSP URL
+            private  string outputDirectory = ConfigurationManager.AppSettings["outputDirectory"];
+        
             public RecorderService()
             {
                 //InitializeComponent();
@@ -50,16 +46,21 @@ namespace Recorder
                         if (!Directory.Exists(outputDirectory))
                             Directory.CreateDirectory(outputDirectory);
 
-                        string dateStamp = DateTime.Now.ToString("yyyy-MM-dd");
+                        string dateStamp = DateTime.Now.ToString("dd-MMMM-yyyy");
 
-                        var files = Directory.EnumerateFiles(outputDirectory, "*.*", SearchOption.AllDirectories).Where(file => Path.GetFileNameWithoutExtension(file).Equals(dateStamp, StringComparison.OrdinalIgnoreCase));
-                        if(files.Any())
+                        string childDir = Path.Combine(outputDirectory, dateStamp);
+
+                        if (!Directory.Exists(childDir))
+                            Directory.CreateDirectory(childDir);
+
+                        var files = Directory.EnumerateFiles(childDir, "*.*", SearchOption.AllDirectories).Where(file => Path.GetFileNameWithoutExtension(file).Equals(dateStamp, StringComparison.OrdinalIgnoreCase));
+                        if (files.Any())
                         {
-                            dateStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                            dateStamp = DateTime.Now.ToString("dd-MMMM-yyyy HH:mm:ss");
                         }
 
 
-                        string outputFile = Path.Combine(outputDirectory, $"{dateStamp}.mp4");
+                        string outputFile = Path.Combine(childDir, $"{dateStamp}.mp4");
 
 
                         DateTime now = DateTime.Now;
@@ -71,33 +72,21 @@ namespace Recorder
                         int secondsLeft = 20;// (int)timeLeft.TotalSeconds;
 
 
-                        //string arguments = $"-rtsp_transport tcp -i \"{rtspUrl}\" -c:v libx264 -preset ultrafast -crf 18 -b:v 4M -bufsize 8M -c:a aac -b:a 128k -t 20 \"{outputFile}\"";
+                        Process ffmpegProcess = new Process();
+                        ffmpegProcess.StartInfo.FileName = ffmpegPath;
+                        ffmpegProcess.StartInfo.Arguments = $"-i \"{rtspUrl}\" -c copy -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
+                        //string ffmpegArguments = $"-rtsp_transport tcp -i \"{rtspUrl}\" -c:v libx264 -preset ultrafast -crf 18 -b:v 4M -bufsize 8M -c:a aac -b:a 128k -t 20 \"{outputFile}\"";
 
-                        //string arguments = $"-hwaccel cuda -rtsp_transport tcp -i \"{rtspUrl}\" -c:v h264_nvenc -preset fast -b:v 4M -c:a aac -b:a 128k -t 20 \"{outputFile}\"";
+                        //string ffmpegArguments = $"-f dshow -i \"{rtspUrl}\" -c:v libx264 -preset ultrafast -crf 18 -r {secondsLeft} -t 10 \"" + outputFile + "\"";
 
-                        string arguments = $"-hwaccel cuda -rtsp_transport tcp -i \"{rtspUrl}\" -map 0:v:0 -c:v h264_nvenc -preset slow -b:v 6M -bufsize 100000 \"{outputFile}\"";
+                        //ffmpegProcess.StartInfo.Arguments = ffmpegArguments; //$"-i \"{rtspUrl}\" -c:v copy -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
+                        ffmpegProcess.StartInfo.UseShellExecute = false;
+                        ffmpegProcess.StartInfo.CreateNoWindow = true;
 
-                        ProcessStartInfo processInfo = new ProcessStartInfo
-                        {
-                            FileName = ffmpegPath,
-                            Arguments = arguments,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            UseShellExecute = false,
-                            CreateNoWindow = true
-                        };
+                        ffmpegProcess.Start();
+                        ffmpegProcess.WaitForExit();
 
-
-                        using (Process process = new Process { StartInfo = processInfo })
-                        {
-                            process.OutputDataReceived += (s, args) => Console.WriteLine(args.Data);
-                            process.ErrorDataReceived += (s, args) => Console.WriteLine(args.Data);
-
-                            process.Start();
-                            process.BeginOutputReadLine();
-                            process.BeginErrorReadLine();
-                            process.WaitForExit();
-                        }
+                      
 
                     }
                 }
