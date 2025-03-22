@@ -11,6 +11,7 @@ namespace Recorder
     using System.Diagnostics;
     using System.IO;
     using System.Linq;
+    using System.Net.NetworkInformation;
     using System.ServiceProcess;
     using System.Threading;
 
@@ -70,24 +71,18 @@ namespace Recorder
                         int secondsLeft = 20;// (int)timeLeft.TotalSeconds;
 
 
-                        //Process ffmpegProcess = new Process();
-                        //ffmpegProcess.StartInfo.FileName = ffmpegPath;
-                        ////ffmpegProcess.StartInfo.Arguments = $"-i \"{rtspUrl}\" -c copy -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
-                        string arguments = $"-rtsp_transport tcp -i \"{rtspUrl}\" -c:v libx264 -preset ultrafast -crf 18 -b:v 4M -bufsize 8M -c:a aac -b:a 128k -t 20 \"{outputFile}\"";
+                        //string arguments = $"-rtsp_transport tcp -i \"{rtspUrl}\" -c:v libx264 -preset ultrafast -crf 18 -b:v 4M -bufsize 8M -c:a aac -b:a 128k -t 20 \"{outputFile}\"";
 
-                        //string ffmpegArguments = $"-f dshow -i \"{rtspUrl}\" -c:v libx264 -preset ultrafast -crf 18 -r {secondsLeft} -t 10 \"" + outputFile + "\"";
+                        //string arguments = $"-hwaccel cuda -rtsp_transport tcp -i \"{rtspUrl}\" -c:v h264_nvenc -preset fast -b:v 4M -c:a aac -b:a 128k -t 20 \"{outputFile}\"";
 
-                        //ffmpegProcess.StartInfo.Arguments = ffmpegArguments; //$"-i \"{rtspUrl}\" -c:v copy -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
-                        //ffmpegProcess.StartInfo.UseShellExecute = false;
-                        //ffmpegProcess.StartInfo.CreateNoWindow = true;
-
-                        //ffmpegProcess.Start();
-                        //ffmpegProcess.WaitForExit();
+                        string arguments = $"-hwaccel cuda -rtsp_transport tcp -i \"{rtspUrl}\" -map 0:v:0 -c:v h264_nvenc -preset slow -b:v 6M -bufsize 100000 \"{outputFile}\"";
 
                         ProcessStartInfo processInfo = new ProcessStartInfo
                         {
                             FileName = ffmpegPath,
                             Arguments = arguments,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
                             UseShellExecute = false,
                             CreateNoWindow = true
                         };
