@@ -14,7 +14,7 @@ public partial class RecorderService : ServiceBase
     private readonly string ffmpegPath;
     private readonly string rtspUrl;
     private readonly string outputDirectory;
-    private const int retryDelaySeconds = 10;
+    private const int retryDelaySeconds = 5;
 
     public RecorderService()
     {
@@ -72,10 +72,12 @@ public partial class RecorderService : ServiceBase
 
                 int secondsLeft = 20; // Adjust recording duration as needed
 
+                string arguments = $"-i \"{rtspUrl}\" -c copy -t {secondsLeft} \"{outputFile}\"";
+
                 using (Process ffmpegProcess = new Process())
                 {
                     ffmpegProcess.StartInfo.FileName = ffmpegPath;
-                    ffmpegProcess.StartInfo.Arguments = $"-i \"{rtspUrl}\" -c copy -t {secondsLeft} \"{outputFile}\"";
+                    ffmpegProcess.StartInfo.Arguments = arguments;
                     ffmpegProcess.StartInfo.UseShellExecute = false;
                     ffmpegProcess.StartInfo.CreateNoWindow = true;
                     ffmpegProcess.Start();
