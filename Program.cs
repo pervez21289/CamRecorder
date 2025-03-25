@@ -1,150 +1,146 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.ServiceProcess;
 using System.Threading;
+using System.Configuration;
+using System.Threading.Tasks;
 
-namespace Recorder
+public partial class RecorderService : ServiceBase
 {
-    using Recorder.RTSPRecorderService;
-    using System;
-    using System.Diagnostics;
-    using System.IO;
-    using System.Linq;
-    using System.ServiceProcess;
-    using System.Threading;
+    private Task recordingTask;
+    private CancellationTokenSource cancellationTokenSource;
+    private readonly string ffmpegPath;
+    private readonly string rtspUrl;
+    private readonly string outputDirectory;
+    private const int retryDelaySeconds = 1;
 
-    namespace RTSPRecorderService
+    public RecorderService()
     {
-        public partial class RecorderService : ServiceBase
+        // Load configuration values
+        rtspUrl = ConfigurationManager.AppSettings["rtspUrl"];
+        outputDirectory = ConfigurationManager.AppSettings["outputDirectory"];
+        ffmpegPath = ConfigurationManager.AppSettings["ffmpegPath"] ?? @"C:\ffmpeg\bin\ffmpeg.exe"; // Update if needed
+
+        // Validate configuration
+        ValidateConfiguration();
+    }
+
+    private void ValidateConfiguration()
+    {
+        if (string.IsNullOrEmpty(rtspUrl) || string.IsNullOrEmpty(outputDirectory))
         {
-            private Thread recordingThread;
-            private bool isRunning = true;
-            private const string ffmpegPath = @"C:\ffmpeg\bin\ffmpeg.exe"; // Update the path if needed
-            //private const string rtspUrl = "rtsp://admin:oWOSAN@192.168.1.10:554/stream1"; // Replace with actual RTSP URL
-            //private const string rtspUrl = "rtsp://192.168.1.10:4747/video"; // Replace with actual RTSP URL
-            private const string rtspUrl = "rtsp://adminc:abc123abc@192.168.1.18:554/stream1"; // Replace with actual RTSP URL
-            private const string outputDirectory = @"C:\Recordings\";
+            throw new ConfigurationErrorsException("Configuration settings (rtspUrl or outputDirectory) are missing.");
+        }
 
-            public RecorderService()
-            {
-                //InitializeComponent();
-            }
+        if (!File.Exists(ffmpegPath))
+        {
+            throw new FileNotFoundException($"FFmpeg not found at: {ffmpegPath}");
+        }
+    }
 
-            protected override void OnStart(string[] args)
+    protected override void OnStart(string[] args)
+    {
+        try
+        {
+            cancellationTokenSource = new CancellationTokenSource();
+            recordingTask = Task.Run(() => StartRecording(cancellationTokenSource.Token), cancellationTokenSource.Token);
+            Logger.Log("Service started successfully.");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("Error on start: " + ex.Message);
+            Stop();
+        }
+    }
+
+    private void StartRecording(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
             {
-                recordingThread = new Thread(new ThreadStart(StartRecording))
+                string dateStamp = DateTime.Now.ToString("dd-MMMM-yyyy");
+                string childDir = Path.Combine(outputDirectory, dateStamp);
+
+                if (!Directory.Exists(childDir))
+                    Directory.CreateDirectory(childDir); // Ensures directory exists
+
+                // Generate unique filename if needed
+                string outputFile = Path.Combine(childDir, $"{DateTime.Now:dd-MMMM-yyyy_HH-mm-ss}.mkv");
+
+                DateTime now = DateTime.Now;
+                // Get the end of the current day (midnight of the next day)
+                DateTime endOfDay = now.Date.AddDays(1);
+                // Calculate the remaining time
+                TimeSpan timeLeft = endOfDay - now;
+                // Get remaining seconds
+                int secondsLeft = 900;
+
+
+
+                //string arguments = $"-rtsp_transport udp -i \"{rtspUrl}\" -c copy -t {secondsLeft} \"{outputFile}\"";
+
+                string arguments = $"-rtsp_transport udp -i \"{rtspUrl}\" -fflags +genpts -c copy -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
+
+
+                using (Process ffmpegProcess = new Process())
                 {
-                    IsBackground = true
-                };
-                recordingThread.Start();
-            }
+                    ffmpegProcess.StartInfo.FileName = ffmpegPath;
+                    ffmpegProcess.StartInfo.Arguments = arguments;
+                    ffmpegProcess.StartInfo.UseShellExecute = false;
+                    ffmpegProcess.StartInfo.CreateNoWindow = true;
+                    ffmpegProcess.Start();
+                    ffmpegProcess.WaitForExit();
 
-            public void StartRecording()
-            {
-                try
-                {
-                    while (isRunning)
+                    if (ffmpegProcess.ExitCode != 0)
                     {
-                        if (!Directory.Exists(outputDirectory))
-                            Directory.CreateDirectory(outputDirectory);
-
-                        string dateStamp = DateTime.Now.ToString("yyyy-MM-dd");
-
-                        var files = Directory.EnumerateFiles(outputDirectory, "*.*", SearchOption.AllDirectories).Where(file => Path.GetFileNameWithoutExtension(file).Equals(dateStamp, StringComparison.OrdinalIgnoreCase));
-                        if (files.Any())
-                        {
-                            dateStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                        }
-
-
-                        string outputFile = Path.Combine(outputDirectory, $"{dateStamp}.mkv");
-
-
-                        DateTime now = DateTime.Now;
-                        // Get the end of the current day (midnight of the next day)
-                        DateTime endOfDay = now.Date.AddDays(1);
-                        // Calculate the remaining time
-                        TimeSpan timeLeft = endOfDay - now;
-                        // Get remaining seconds
-                        int secondsLeft = 20;// (int)timeLeft.TotalSeconds;
-
-
-                        //Process ffmpegProcess = new Process();
-                        //ffmpegProcess.StartInfo.FileName = ffmpegPath;
-                        string arguments = $"-buffer_size 1024000 -rtsp_transport udp -i \"{rtspUrl}\" -fflags +genpts -c copy -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
-                        //string arguments = $"-rtsp_transport tcp -i \"{rtspUrl}\" -c:v libx264 -preset ultrafast -crf 18 -b:v 4M -bufsize 8M -c:a aac -b:a 128k -t 20 \"{outputFile}\"";
-
-                        //string ffmpegArguments = $"-f dshow -i \"{rtspUrl}\" -c:v libx264 -preset ultrafast -crf 18 -r {secondsLeft} -t 10 \"" + outputFile + "\"";
-
-                        //ffmpegProcess.StartInfo.Arguments = ffmpegArguments; //$"-i \"{rtspUrl}\" -c:v copy -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
-                        //ffmpegProcess.StartInfo.UseShellExecute = false;
-                        //ffmpegProcess.StartInfo.CreateNoWindow = true;
-
-                        //ffmpegProcess.Start();
-                        //ffmpegProcess.WaitForExit();
-
-                        ProcessStartInfo processInfo = new ProcessStartInfo
-                        {
-                            FileName = ffmpegPath,
-                            Arguments = arguments,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            UseShellExecute = false,
-                            CreateNoWindow = true
-                        };
-
-
-                        using (Process process = new Process { StartInfo = processInfo })
-                        {
-                            process.OutputDataReceived += (s, args) => Console.WriteLine(args.Data);
-                            process.ErrorDataReceived += (s, args) => Console.WriteLine(args.Data);
-
-                            process.Start();
-                            process.BeginOutputReadLine();
-                            process.BeginErrorReadLine();
-                            process.WaitForExit();
-                        }
-
+                        Logger.Log("FFmpeg process exited with error. Restarting recording...");
+                        Task.Delay(retryDelaySeconds * 1000, cancellationToken).Wait();
+                        continue; // Restart the recording loop
                     }
                 }
-                catch (Exception ex)
-                {
-                    EventLog.WriteEntry("RTSPRecorderService", "Error: " + ex.Message, EventLogEntryType.Error);
-                }
+
+                //Task.Delay(5000, cancellationToken).Wait(); // Wait before starting next recording
             }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("Error in recording loop: " + ex.Message);
+            Task.Delay(retryDelaySeconds * 1000, cancellationToken).Wait();
+        }
+    }
 
-            protected override void OnStop()
-            {
-                isRunning = false;
-                recordingThread?.Abort();
-            }
+    protected override void OnStop()
+    {
+        try
+        {
+            cancellationTokenSource?.Cancel();
+            recordingTask?.Wait();
+            Logger.Log("Service stopped successfully.");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("Error on stop: " + ex.Message);
+        }
+    }
 
-
-
-            public static void Main(string[] args)
-            {
-                if (Environment.UserInteractive)
-                {
-                    // Run as console app
-                    RecorderService service = new RecorderService();
-                    service.OnStart(null);
-                    Console.WriteLine("Service running... Press any key to exit.");
-                    Console.ReadKey();
-                    service.OnStop();
-                }
-                else
-                {
-                    // Run as a Windows Service
-                    ServiceBase.Run(new RecorderService());
-                }
-            }
-
-
+    public static void Main(string[] args)
+    {
+        if (Environment.UserInteractive)
+        {
+            // Run as console app for debugging
+            RecorderService service = new RecorderService();
+            service.OnStart(null);
+            Console.WriteLine("Service running... Press any key to exit.");
+            Console.ReadKey();
+            service.OnStop();
+        }
+        else
+        {
+            // Run as Windows Service
+            ServiceBase.Run(new RecorderService());
         }
     }
 }
-
-
-
-
