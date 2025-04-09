@@ -68,7 +68,7 @@ public partial class RecorderService : ServiceBase
                     Directory.CreateDirectory(childDir); // Ensures directory exists
 
                 // Generate unique filename if needed
-                string outputFile = Path.Combine(childDir, $"{DateTime.Now:dd-MMMM-yyyy_HH-mm-ss}.mkv");
+                string outputFile = Path.Combine(childDir, $"{DateTime.Now:dd-MMMM-yyyy hh-mm-ss tt}.mp4");
 
                 DateTime now = DateTime.Now;
                 // Get the end of the current day (midnight of the next day)
@@ -76,13 +76,14 @@ public partial class RecorderService : ServiceBase
                 // Calculate the remaining time
                 TimeSpan timeLeft = endOfDay - now;
                 // Get remaining seconds
-                int secondsLeft = 900;
+                int secondsLeft = 600;
 
 
 
                 //string arguments = $"-rtsp_transport udp -i \"{rtspUrl}\" -c copy -t {secondsLeft} \"{outputFile}\"";
 
-                string arguments = $"-rtsp_transport udp -i \"{rtspUrl}\" -fflags +genpts -c copy -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
+                //string arguments = $"-rtsp_transport udp -i \"{rtspUrl}\" -fflags +genpts -c copy -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
+                string arguments = $"-rtsp_transport udp -i \"{rtspUrl}\" -fflags +genpts -c:v libx264 -preset fast -c:a aac -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
 
 
                 using (Process ffmpegProcess = new Process())
