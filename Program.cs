@@ -68,7 +68,7 @@ public partial class RecorderService : ServiceBase
                     Directory.CreateDirectory(childDir); // Ensures directory exists
 
                 // Generate unique filename if needed
-                string outputFile = Path.Combine(childDir, $"{DateTime.Now:dd-MMMM-yyyy hh-mm-ss tt}.mp4");
+                string outputFile = Path.Combine(childDir, $"{DateTime.Now:dd-MMMM-yyyy hh-mm-ss tt}.mkv");
 
                 DateTime now = DateTime.Now;
                 // Get the end of the current day (midnight of the next day)
@@ -80,10 +80,12 @@ public partial class RecorderService : ServiceBase
 
 
 
-                //string arguments = $"-rtsp_transport udp -i \"{rtspUrl}\" -c copy -t {secondsLeft} \"{outputFile}\"";
+                string arguments = $"-rtsp_transport udp -fflags +genpts -i \"{rtspUrl}\" -c copy -t {secondsLeft} \"{outputFile}\"";
 
                 //string arguments = $"-rtsp_transport udp -i \"{rtspUrl}\" -fflags +genpts -c copy -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
-                string arguments = $"-rtsp_transport udp -i \"{rtspUrl}\" -fflags +genpts -c:v libx264 -preset fast -c:a aac -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
+                // string arguments = $"-rtsp_transport udp -i \"{rtspUrl}\" -fflags +genpts -c:v libx264 -preset fast -c:a aac -t {secondsLeft} \"{outputFile}\""; // 24-hour recording
+
+                //string arguments = $"-rtsp_transport udp -i \"{rtspUrl}\"   -fflags +genpts -c:v libx264 -preset fast -c:a aac -t {secondsLeft} \"{outputFile}\"";
 
 
                 using (Process ffmpegProcess = new Process())
@@ -92,10 +94,30 @@ public partial class RecorderService : ServiceBase
                     ffmpegProcess.StartInfo.Arguments = arguments;
                     ffmpegProcess.StartInfo.UseShellExecute = false;
                     ffmpegProcess.StartInfo.CreateNoWindow = true;
-                    ffmpegProcess.Start();
-                    ffmpegProcess.WaitForExit();
 
-                    if (ffmpegProcess.ExitCode != 0)
+
+
+                    ffmpegProcess.Start();
+                    //ffmpegProcess.WaitForExit();
+
+                    int timeoutSeconds = secondsLeft + 5; // Allow some buffer time
+                    bool exited = ffmpegProcess.WaitForExit(timeoutSeconds * 1000);
+
+                    if (!exited)
+                    {
+                        Logger.Log($"FFmpeg process did not exit after {timeoutSeconds} seconds. Killing it...");
+                        try
+                        {
+                            ffmpegProcess.Kill(); // Kill entire process tree
+                            ffmpegProcess.WaitForExit();
+                            Logger.Log("FFmpeg process killed.");
+                        }
+                        catch (Exception killEx)
+                        {
+                            Logger.Log("Failed to kill FFmpeg process: " + killEx.Message);
+                        }
+                    }
+                    else if (ffmpegProcess.ExitCode != 0)
                     {
                         Logger.Log("FFmpeg process exited with error. Restarting recording...");
                         Task.Delay(retryDelaySeconds * 1000, cancellationToken).Wait();
